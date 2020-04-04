@@ -22,7 +22,7 @@ if __name__ == "__main__":
         for line in corpus:
             # This corpus numbers each line, we want to remove that number
             line_filtered = re.split("^[0-9]+", line)
-            test_bigram.load_frequency(line_filtered[1])
+            test_bigram.load_line(line_filtered[1])
         corpus.close()
 
         if (laplace_smooth == True):
