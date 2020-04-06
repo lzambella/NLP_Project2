@@ -60,16 +60,21 @@ class MLEProbability:
         self.bigram_count = len(self.bigrams_dict)
 
 
-    def get_unigram_probabilities(self):
+    def get_unigram_probabilities(self, smooth = False):
         '''
         Method that computes the unigram probabilities
         This is simply the frequency of a type over the total amount of tokens
 
-        Returns a probability distribution in the form of a dictionary: {word : frequency}
+        Returns a probability distribution as a list of tuples in the form (word, prob)
         '''
-        prob_dist = {}
-        for unigram in self.unigrams:
-            prob_dist[unigram.word] = (unigram.frequency/self.__token_count)
+        prob_dist = []
+
+        # Check if we smooth first
+        for unigram in self.unigrams.keys():
+            if smooth:
+                prob_dist.append(( unigram, (self.unigrams[unigram] + 1) / (self.__token_count + self.unigram_count)))
+            else:
+                prob_dist.append( (unigram, self.unigrams[unigram]/self.__token_count) )
 
         return prob_dist
 
@@ -86,7 +91,7 @@ class MLEProbability:
                 # Add as new bigram
                 self.bigrams_dict[f"{tokens[i]} {tokens[i+1]}"] = 1
 
-    def generate_bigram_probabilities(self):
+    def generate_bigram_probabilities(self, smooth, normal=False):
         '''
         Generate the probabilities of a word occurring given another word precedes it
         A bigram tells us (word_n-1, word_n) so using word_n-1 as the current word, we can calculate the probabilities of possible of w_n+1 
@@ -100,15 +105,39 @@ class MLEProbability:
         cpu_count = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(cpu_count)
         self.keys = list(self.bigrams_dict.keys())
-        probabilities = pool.map(self.multicore_test, range(0, len(self.bigrams_dict)-1 ))
+        if normal:
+            probabilities = pool.starmap(self.multicore_test_normalized, zip(range(0, len(self.bigrams_dict)-1 ), [smooth] * len(self.bigrams_dict)) )
+        else:
+            probabilities = pool.starmap(self.multicore_test, zip(range(0, len(self.bigrams_dict)-1 ), [smooth] * len(self.bigrams_dict)) )
         return probabilities
 
-    def multicore_test(self, i):
+    def multicore_test(self, key_index, smooth):
         '''
         Helper function that actually computes bigram probabilities via multiprocessing
+        i -> tuple containing key index to get frequency from and whether to smooth it or not
         '''
-        bigram_words = self.keys[i].split()
-        return ( bigram_words[0], bigram_words[1] , (self.bigrams_dict[self.keys[i]] / self.unigram_count) )
+
+        # Get the two words in the bigram
+        # This is inefficient
+        bigram_words = self.keys[key_index].split()
+        if smooth:
+            return ( bigram_words[0], bigram_words[1] , ((self.bigrams_dict[self.keys[key_index]] + 1) / (self.unigrams[bigram_words[0]] + self.unigram_count) ) )            
+        else:   
+            return ( bigram_words[0], bigram_words[1] , (self.bigrams_dict[self.keys[key_index]] / self.unigrams[bigram_words[0]]) )
+
+    def multicore_test_normalized(self, key_index, smooth):
+        '''
+        Helper function that actually computes bigram probabilities via multiprocessing
+        i -> tuple containing key index to get frequency from and whether to smooth it or not
+        '''
+
+        # Get the two words in the bigram
+        # This is inefficient
+        bigram_words = self.keys[key_index].split()
+        if smooth:
+            return ( bigram_words[0], bigram_words[1] , ((self.bigrams_dict[self.keys[key_index]] + 1) / (self.bigram_count + self.unigram_count) ) )            
+        else:   
+            return ( bigram_words[0], bigram_words[1] , (self.bigrams_dict[self.keys[key_index]] / self.bigram_count) )
 
 
     def smooth_unigrams(self):
@@ -117,7 +146,7 @@ class MLEProbability:
         '''
         for key in self.unigrams.keys():
             self.unigrams[key] += 1
-            self.unigram_count += len(self.unigrams)
+            self.__token_count += len(self.unigrams)
 
     def smooth_bigrams(self):
         '''
